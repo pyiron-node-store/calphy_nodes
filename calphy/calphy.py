@@ -1,5 +1,6 @@
 from dataclasses import dataclass, asdict
 from typing import Optional, Union
+import numpy as np
 import os
 import random
 import string
@@ -64,22 +65,17 @@ class InputClass:
         self.berendsen = Berendsen()
         self.queue = Queue()
 
-
 def _generate_random_string(length):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-@as_function_node()
-def SolidFreeEnergy(inp, structure, potential):
-    from calphy.solid import Solid
-    from calphy.routines import routine_fe
-    from calphy.input import Calculation
+def _prepare_potential_and_structure(potential, structure):
     from pyiron_atomistics.lammps.potential import LammpsPotential, LammpsPotentialFile
     from pyiron_atomistics.lammps.structure import (
         LammpsStructure,
         UnfoldingPrism,
         structure_to_lammps,
     ) 
-    
+
     potential_df = LammpsPotentialFile().find_by_name(potential)
     potential = LammpsPotential()
     potential.df = potential_df
@@ -111,25 +107,82 @@ def SolidFreeEnergy(inp, structure, potential):
         else:
             masses.append(1.0)
 
+    file_name = os.path.join(os.getcwd(), _generate_random_string(7)+'.dat')
+    lmp_structure.write_file(file_name=file_name)
+    potential.copy_pot_files(os.getcwd())
+    return pair_style, pair_coeff, elements, masses, file_name
+
+def _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid'):
+    from calphy.input import Calculation
+    pair_style, pair_coeff, elements, masses, file_name = _prepare_potential_and_structure(potential, structure)
     inpdict = asdict(inp)
     inpdict["pair_style"] = pair_style
     inpdict["pair_coeff"] = pair_coeff
     inpdict["element"] = elements
     inpdict["mass"] = masses
-    inpdict['mode'] = 'fe'
-    inpdict['reference_phase'] = 'solid'
-    
-    #write structure
-    file_name = os.path.join(os.getcwd(), _generate_random_string(7)+'.dat')
-    inpdict['lattice'] = file_name
-    
-    lmp_structure.write_file(file_name=file_name)
-    potential.copy_pot_files(os.getcwd())
-
+    inpdict['mode'] = mode
+    inpdict['reference_phase'] = reference_phase
+    inpdict['lattice'] = file_name    
     calc = Calculation(**inpdict)
+    return calc
 
+@as_function_node('free_energy')
+def SolidFreeEnergy(inp, structure, potential):
+    from calphy.solid import Solid
+    from calphy.routines import routine_fe
+    
+    calc = _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid')
     simfolder = calc.create_folders()
     job = Solid(calculation=calc, simfolder=simfolder)
     job = routine_fe(job)
     #run calculation
-    return job
+    return job.report.fe
+
+@as_function_node('free_energy')
+def LiquidFreeEnergy(inp, structure, potential):
+    from calphy.solid import Solid
+    from calphy.routines import routine_fe
+    
+    calc = _prepare_input(inp, potential, structure, mode='fe', reference_phase='liquid')
+    simfolder = calc.create_folders()
+    job = Solid(calculation=calc, simfolder=simfolder)
+    job = routine_fe(job)
+    #run calculation
+    return job.report.fe
+
+@as_function_node('temperature', 'free_energy')
+def SolidFreeEnergyWithTemperature(inp, structure, potential):
+    from calphy.solid import Solid
+    from calphy.routines import routine_ts
+    
+    calc = _prepare_input(inp, potential, structure, mode='ts', reference_phase='solid')
+    simfolder = calc.create_folders()
+    job = Solid(calculation=calc, simfolder=simfolder)
+    job = routine_ts(job)
+    #run calculation
+
+    #grab the results
+    datafile = os.path.join(os.getcwd(), simfolder, 'temperature_sweep.dat')
+    t, f = np.loadtxt(datafile, unpack=True, usecols=(0,1))
+    return t, f
+
+@as_function_node('temperature', 'free_energy')
+def LiquidFreeEnergyWithTemperature(inp, structure, potential):
+    from calphy.solid import Solid
+    from calphy.routines import routine_ts
+    
+    calc = _prepare_input(inp, potential, structure, mode='ts', reference_phase='liquid')
+    simfolder = calc.create_folders()
+    job = Solid(calculation=calc, simfolder=simfolder)
+    job = routine_ts(job)
+    
+    #grab the results
+    datafile = os.path.join(os.getcwd(), simfolder, 'temperature_sweep.dat')
+    t, f = np.loadtxt(datafile, unpack=True, usecols=(0,1))
+    return t, f
+
+@as_function_node('results')
+def CollectResults():
+    from calphy.postprocessing import gather_results
+    df = gather_results('.')
+    return df
