@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Union
 import numpy as np
 import os
@@ -40,11 +40,11 @@ class Queue:
 
 @dataclass
 class InputClass:
-    md: Optional[MD] = None
-    tolerance: Optional[Tolerance] = None
-    nose_hoover: Optional[NoseHoover] = None
-    berendsen: Optional[Berendsen] = None
-    queue: Optional[Queue] = None
+    md: MD = field(default_factory=MD)
+    tolerance: Tolerance = field(default_factory=Tolerance)
+    nose_hoover: NoseHoover = field(default_factory=NoseHoover)
+    berendsen: Berendsen = field(default_factory=Berendsen)
+    queue: Queue = field(default_factory=Queue)
     pressure: int = 0
     temperature: int = 0
     npt: bool = True
@@ -57,13 +57,6 @@ class InputClass:
     reference_phase: Optional[str] = None
     mode: Optional[str] = None
     spring_constants: Optional[float] = None
-    
-    def __post_init__(self):
-        self.md = MD()
-        self.tolerance = Tolerance()
-        self.nose_hoover = NoseHoover()
-        self.berendsen = Berendsen()
-        self.queue = Queue()
 
 def _generate_random_string(length):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -168,18 +161,73 @@ def SolidFreeEnergyWithTemperature(inp, structure, potential):
 
 @as_function_node('temperature', 'free_energy')
 def LiquidFreeEnergyWithTemperature(inp, structure, potential):
-    from calphy.solid import Solid
+    from calphy.liquid import Liquid
     from calphy.routines import routine_ts
     
     calc = _prepare_input(inp, potential, structure, mode='ts', reference_phase='liquid')
     simfolder = calc.create_folders()
-    job = Solid(calculation=calc, simfolder=simfolder)
+    job = Liquid(calculation=calc, simfolder=simfolder)
     job = routine_ts(job)
     
     #grab the results
     datafile = os.path.join(os.getcwd(), simfolder, 'temperature_sweep.dat')
     t, f = np.loadtxt(datafile, unpack=True, usecols=(0,1))
     return t, f
+
+@as_function_node('phase_transition_temperature')
+def CalculatePhaseTransformationTemperature(t1, f1, t2, f2, fit_order=4, plot=True):
+    import matplotlib.pyplot as plt
+
+    #do some fitting to determine temps
+    t1min = np.min(t1)
+    t2min = np.min(t2)
+    t1max = np.max(t1)
+    t2max = np.max(t2)
+
+    tmin = np.min([t1min, t2min])
+    tmax = np.max([t1max, t2max])
+
+    #warn about extrapolation
+    if not t1min == t2min:
+        warnings.warn(f'free energy is being extrapolated!')
+    if not t1max == t2max:
+        warnings.warn(f'free energy is being extrapolated!')
+
+    #now fit
+    f1fit = np.polyfit(t1, f1, fit_order)
+    f2fit = np.polyfit(t2, f2, fit_order)
+
+    #reevaluate over the new range
+    fit_t = np.arange(tmin, tmax+1, 1)
+    fit_f1 = np.polyval(f1fit, fit_t)
+    fit_f2 = np.polyval(f2fit, fit_t)
+
+    #now evaluate the intersection temp
+    arg = np.argsort(np.abs(fit_f1-fit_f2))[0]
+    transition_temp = fit_t[arg]
+
+    #warn if the temperature is shady
+    if np.abs(transition_temp-tmin) < 1E-3:
+        warnings.warn('It is likely there is no intersection of free energies')
+    elif np.abs(transition_temp-tmax) < 1E-3:
+        warnings.warn('It is likely there is no intersection of free energies')
+
+    #plot
+    if plot:
+        c1lo = '#ef9a9a'
+        c1hi = '#b71c1c'
+        c2lo = '#90caf9'
+        c2hi = '#0d47a1'
+
+        plt.plot(fit_t, fit_f1, color=c1lo, label=f'data1 fit')
+        plt.plot(fit_t, fit_f2, color=c2lo, label=f'data2 fit')
+        plt.plot(t1, f1, color=c1hi, label='data1', ls='dashed')
+        plt.plot(t2, f2, color=c2hi, label='data2', ls='dashed')
+        plt.axvline(transition_temp, ls='dashed', c='#37474f')
+        plt.ylabel('Free energy (eV/atom)')
+        plt.xlabel('Temperature (K)')
+        plt.legend(frameon=False)
+    return transition_temp
 
 @as_function_node('results')
 def CollectResults():
