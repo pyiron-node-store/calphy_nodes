@@ -215,6 +215,23 @@ def _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid'
 
 @as_function_node('free_energy')
 def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
+    """
+    Calculate the free energy of a solid phase.
+
+    Parameters:
+    -----------
+    inp: InputClass
+        Input parameters for calphy calculations.
+    structure: Atoms
+        Atomic structure.
+    potential: str
+        Potential name.
+    
+    Returns:
+    --------
+    float
+        Free energy in eV/atom
+    """
     from calphy.solid import Solid
     from calphy.routines import routine_fe
     
@@ -227,6 +244,23 @@ def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
 
 @as_function_node('free_energy')
 def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
+    """
+    Calculate the free energy of a liquid phase.
+
+    Parameters:
+    -----------
+    inp: InputClass
+        Input parameters for calphy calculations.
+    structure: Atoms
+        Atomic structure.
+    potential: str
+        Potential name.
+    
+    Returns:
+    --------
+    float
+        Free energy in eV/atom
+    """
     from calphy.liquid import Liquid
     from calphy.routines import routine_fe
     
@@ -239,6 +273,23 @@ def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float
 
 @as_function_node('temperature', 'free_energy')
 def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate the free energy of a solid phase as a function of temperature.
+
+    Parameters:
+    -----------
+    inp: InputClass
+        Input parameters for calphy calculations.
+    structure: Atoms
+        Atomic structure.
+    potential: str
+        Potential name.
+
+    Returns:
+    --------
+    Tuple[np.ndarray, np.ndarray]
+        Temperature and free energy in K and eV/atom, respectively.
+    """
     from calphy.solid import Solid
     from calphy.routines import routine_ts
     
@@ -255,6 +306,23 @@ def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential:
 
 @as_function_node('temperature', 'free_energy')
 def LiquidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate the free energy of a liquid phase as a function of temperature.
+
+    Parameters:
+    -----------
+    inp: InputClass
+        Input parameters for calphy calculations.
+    structure: Atoms
+        Atomic structure.
+    potential: str
+        Potential name.
+
+    Returns:
+    --------
+    Tuple[np.ndarray, np.ndarray]
+        Temperature and free energy in K and eV/atom, respectively.
+    """
     from calphy.liquid import Liquid
     from calphy.routines import routine_ts
     
@@ -270,6 +338,29 @@ def LiquidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential
 
 @as_function_node('phase_transition_temperature')
 def CalculatePhaseTransformationTemperature(t1: np.ndarray, f1: np.ndarray, t2: np.ndarray, f2: np.ndarray, fit_order: int = 4, plot: bool =True) -> float:
+    """
+    Calculate the phase transformation temperature from free energy data.
+
+    Parameters:
+    -----------
+    t1: np.ndarray
+        Temperature array for phase 1.
+    f1: np.ndarray
+        Free energy array for phase 1.
+    t2: np.ndarray
+        Temperature array for phase 2.
+    f2: np.ndarray
+        Free energy array for phase 2.
+    fit_order: int
+        Order of the polynomial fit.
+    plot: bool
+        Plot the free energy data and the fit.
+    
+    Returns:
+    --------
+    float
+        Phase transformation temperature
+    """
     import matplotlib.pyplot as plt
 
     #do some fitting to determine temps
