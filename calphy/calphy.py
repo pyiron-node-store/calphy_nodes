@@ -96,7 +96,6 @@ class Queue:
     """
     cores: int = 1
 
-@as_dataclass_node
 @dataclass
 class InputClass:
     """
