@@ -1,10 +1,10 @@
 from dataclasses import dataclass, asdict, field
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, List
 import numpy as np
 import os
 import random
 import string
-from pyiron_workflow import as_function_node, as_macro_node
+from pyiron_workflow import as_function_node, as_macro_node, as_dataclass_node
 from ase import Atoms
 import pandas as pd
 
@@ -57,7 +57,7 @@ class Tolerance:
     spring_constant: float = 0.01
     solid_fraction: float = 0.7
     liquid_fraction: float = 0.05
-    pressure: float = 0.5
+    pressure: float = 1
 
 @dataclass
 class NoseHoover:
@@ -96,6 +96,7 @@ class Queue:
     """
     cores: int = 1
 
+@as_dataclass_node
 @dataclass
 class InputClass:
     """
@@ -140,10 +141,10 @@ class InputClass:
     berendsen: Berendsen = field(default_factory=Berendsen)
     queue: Queue = field(default_factory=Queue)
     pressure: int = 0
-    temperature: int = 0
+    temperature: Union[int, List[int]] = 300
     npt: bool = True
-    n_equilibration_steps: int = 15000
-    n_switching_steps: int = 25000
+    n_equilibration_steps: int = 2500
+    n_switching_steps: int = 2500
     n_print_steps: int = 1000
     n_iterations: int = 1
     equilibration_control: str = "nose_hoover"
