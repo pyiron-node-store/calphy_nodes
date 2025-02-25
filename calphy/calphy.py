@@ -1,13 +1,35 @@
 from dataclasses import dataclass, asdict, field
-from typing import Optional, Union
+from typing import Optional, Union, Tuple
 import numpy as np
 import os
 import random
 import string
 from pyiron_workflow import as_function_node, as_macro_node
+from ase import Atoms
+import pandas as pd
 
 @dataclass
 class MD:
+    """
+    Molecular dynamics parameters.
+
+    Attributes:
+    -----------
+    timestep: float
+        https://calphy.org/en/latest/inputfile.html#timestep
+    n_small_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-small-steps
+    n_every_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-every-steps
+    n_repeat_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-repeat-steps
+    n_cycles: int
+        https://calphy.org/en/latest/inputfile.html#n-cycles
+    thermostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#thermostat-damping
+    barostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#barostat-damping
+    """
     timestep: float = 0.001
     n_small_steps: int = 10000
     n_every_steps: int = 10
@@ -18,7 +40,20 @@ class MD:
 
 @dataclass
 class Tolerance:
-    lattice_constant: float = 0.0002
+    """
+    Tolerance parameters.
+
+    Attributes:
+    -----------
+    spring_constant: float
+        https://calphy.org/en/latest/inputfile.html#tol-spring-constant
+    solid_fraction: float
+        https://calphy.org/en/latest/inputfile.html#tol-solid-fraction
+    liquid_fraction: float
+        https://calphy.org/en/latest/inputfile.html#tol-liquid-fraction
+    pressure: float
+        https://calphy.org/en/latest/inputfile.html#tol-pressure
+    """
     spring_constant: float = 0.01
     solid_fraction: float = 0.7
     liquid_fraction: float = 0.05
@@ -26,20 +61,79 @@ class Tolerance:
 
 @dataclass
 class NoseHoover:
+    """
+    Nose-Hoover parameters.
+
+    Attributes:
+    -----------
+    thermostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#nose-hoover-thermostat-damping
+    barostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#nose-hoover-barostat-damping
+    """
     thermostat_damping: float = 0.1
     barostat_damping: float = 0.1
 
 @dataclass
 class Berendsen:
+    """
+    Berendsen parameters.
+
+    Attributes:
+    -----------
+    thermostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#berendsen-thermostat-damping
+    barostat_damping: float
+        https://calphy.org/en/latest/inputfile.html#berendsen-barostat-damping
+    """
     thermostat_damping: float = 100.0
     barostat_damping: float = 100.0
 
 @dataclass
 class Queue:
+    """
+    Queue parameters.
+    """
     cores: int = 1
 
 @dataclass
 class InputClass:
+    """
+    Input parameters for calphy calculations.
+
+    Attributes:
+    -----------
+    md: MD
+        Molecular dynamics parameters.
+    tolerance: Tolerance
+        Tolerance parameters.
+    nose_hoover: NoseHoover
+        Nose-Hoover parameters.
+    berendsen: Berendsen
+        Berendsen parameters.
+    queue: Queue
+        Queue parameters.
+    pressure: int
+        https://calphy.org/en/latest/inputfile.html#pressure
+    temperature: int
+        https://calphy.org/en/latest/inputfile.html#temperature
+    npt: bool
+        https://calphy.org/en/latest/inputfile.html#npt
+    n_equilibration_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-equilibration-steps
+    n_switching_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-switching-steps
+    n_print_steps: int
+        https://calphy.org/en/latest/inputfile.html#n-print-steps
+    n_iterations: int
+        https://calphy.org/en/latest/inputfile.html#n-iterations
+    equilibration_control: str
+        https://calphy.org/en/latest/inputfile.html#equilibration-control
+    melting_cycle: bool
+        https://calphy.org/en/latest/inputfile.html#melting-cycle
+    spring_constants: Optional[float]
+        https://calphy.org/en/latest/inputfile.html#spring-constants        
+    """
     md: MD = field(default_factory=MD)
     tolerance: Tolerance = field(default_factory=Tolerance)
     nose_hoover: NoseHoover = field(default_factory=NoseHoover)
@@ -58,7 +152,7 @@ class InputClass:
     mode: Optional[str] = None
     spring_constants: Optional[float] = None
 
-def _generate_random_string(length):
+def _generate_random_string(length: str) -> str:
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 def _prepare_potential_and_structure(potential, structure):
@@ -120,7 +214,7 @@ def _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid'
     return calc
 
 @as_function_node('free_energy')
-def SolidFreeEnergy(inp, structure, potential):
+def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
     from calphy.solid import Solid
     from calphy.routines import routine_fe
     
@@ -132,19 +226,19 @@ def SolidFreeEnergy(inp, structure, potential):
     return job.report.fe
 
 @as_function_node('free_energy')
-def LiquidFreeEnergy(inp, structure, potential):
-    from calphy.solid import Solid
+def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
+    from calphy.liquid import Liquid
     from calphy.routines import routine_fe
     
     calc = _prepare_input(inp, potential, structure, mode='fe', reference_phase='liquid')
     simfolder = calc.create_folders()
-    job = Solid(calculation=calc, simfolder=simfolder)
+    job = Liquid(calculation=calc, simfolder=simfolder)
     job = routine_fe(job)
     #run calculation
     return job.report.fe
 
 @as_function_node('temperature', 'free_energy')
-def SolidFreeEnergyWithTemperature(inp, structure, potential):
+def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
     from calphy.solid import Solid
     from calphy.routines import routine_ts
     
@@ -160,7 +254,7 @@ def SolidFreeEnergyWithTemperature(inp, structure, potential):
     return t, f
 
 @as_function_node('temperature', 'free_energy')
-def LiquidFreeEnergyWithTemperature(inp, structure, potential):
+def LiquidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
     from calphy.liquid import Liquid
     from calphy.routines import routine_ts
     
@@ -175,7 +269,7 @@ def LiquidFreeEnergyWithTemperature(inp, structure, potential):
     return t, f
 
 @as_function_node('phase_transition_temperature')
-def CalculatePhaseTransformationTemperature(t1, f1, t2, f2, fit_order=4, plot=True):
+def CalculatePhaseTransformationTemperature(t1: np.ndarray, f1: np.ndarray, t2: np.ndarray, f2: np.ndarray, fit_order: int = 4, plot: bool =True) -> float:
     import matplotlib.pyplot as plt
 
     #do some fitting to determine temps
@@ -230,7 +324,7 @@ def CalculatePhaseTransformationTemperature(t1, f1, t2, f2, fit_order=4, plot=Tr
     return transition_temp
 
 @as_function_node('results')
-def CollectResults():
+def CollectResults() -> pd.DataFrame:
     from calphy.postprocessing import gather_results
     df = gather_results('.')
     return df
