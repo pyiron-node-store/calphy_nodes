@@ -240,7 +240,7 @@ def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
     job = Solid(calculation=calc, simfolder=simfolder)
     job = routine_fe(job)
     #run calculation
-    return job.report.fe
+    return job.report["results"]["free_energy"]
 
 @as_function_node('free_energy')
 def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
@@ -269,7 +269,7 @@ def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float
     job = Liquid(calculation=calc, simfolder=simfolder)
     job = routine_fe(job)
     #run calculation
-    return job.report.fe
+    return job.report["results"]["free_energy"]
 
 @as_function_node('temperature', 'free_energy')
 def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
