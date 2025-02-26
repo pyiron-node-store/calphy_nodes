@@ -8,6 +8,7 @@ from pyiron_workflow import as_function_node, as_macro_node, as_dataclass_node
 from ase import Atoms
 import pandas as pd
 
+@as_dataclass_node
 @dataclass
 class MD:
     """
@@ -38,6 +39,7 @@ class MD:
     thermostat_damping: float = 0.5
     barostat_damping: float = 0.1
 
+@as_dataclass_node
 @dataclass
 class Tolerance:
     """
@@ -57,8 +59,9 @@ class Tolerance:
     spring_constant: float = 0.01
     solid_fraction: float = 0.7
     liquid_fraction: float = 0.05
-    pressure: float = 1
+    pressure: float = 1.0
 
+@as_dataclass_node
 @dataclass
 class NoseHoover:
     """
@@ -74,6 +77,7 @@ class NoseHoover:
     thermostat_damping: float = 0.1
     barostat_damping: float = 0.1
 
+@as_dataclass_node
 @dataclass
 class Berendsen:
     """
@@ -89,13 +93,7 @@ class Berendsen:
     thermostat_damping: float = 100.0
     barostat_damping: float = 100.0
 
-@dataclass
-class Queue:
-    """
-    Queue parameters.
-    """
-    cores: int = 1
-
+@as_dataclass_node
 @dataclass
 class InputClass:
     """
@@ -134,13 +132,13 @@ class InputClass:
     spring_constants: Optional[float]
         https://calphy.org/en/latest/inputfile.html#spring-constants        
     """
-    md: MD = field(default_factory=MD)
-    tolerance: Tolerance = field(default_factory=Tolerance)
-    nose_hoover: NoseHoover = field(default_factory=NoseHoover)
-    berendsen: Berendsen = field(default_factory=Berendsen)
-    queue: Queue = field(default_factory=Queue)
+    md: Optional[MD] = None 
+    tolerance: Optional[Tolerance] = None
+    nose_hoover: Optional[NoseHoover] = None
+    berendsen: Optional[Berendsen] = None
     pressure: int = 0
-    temperature: Union[int, List[int]] = 300
+    temperature: int = 300
+    temperature_stop: int = 600
     npt: bool = True
     n_equilibration_steps: int = 2500
     n_switching_steps: int = 2500
@@ -151,6 +149,7 @@ class InputClass:
     reference_phase: Optional[str] = None
     mode: Optional[str] = None
     spring_constants: Optional[float] = None
+    cores: Optional[int] = 1
 
 def _generate_random_string(length: str) -> str:
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -202,6 +201,7 @@ def _prepare_potential_and_structure(potential, structure):
 def _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid'):
     from calphy.input import Calculation
     pair_style, pair_coeff, elements, masses, file_name = _prepare_potential_and_structure(potential, structure)
+
     inpdict = asdict(inp)
     inpdict["pair_style"] = pair_style
     inpdict["pair_coeff"] = pair_coeff
@@ -209,12 +209,46 @@ def _prepare_input(inp, potential, structure, mode='fe', reference_phase='solid'
     inpdict["mass"] = masses
     inpdict['mode'] = mode
     inpdict['reference_phase'] = reference_phase
-    inpdict['lattice'] = file_name    
+    inpdict['lattice'] = file_name
+    inpdict["queue"] = {"cores": inpdict["cores"],}
+    del inpdict["cores"]
+
+    if inpdict["md"] is None:
+        inpdict["md"] = {
+                "timestep": 0.001,
+                "n_small_steps": 10000,
+                "n_every_steps": 10,
+                "n_repeat_steps": 10,
+                "n_cycles": 100,
+                "thermostat_damping": 0.5,
+                "barostat_damping": 0.1,
+        }
+    if inpdict["tolerance"] is None:
+        inpdict["tolerance"] = {
+                "spring_constant": 0.01,
+                "solid_fraction": 0.7,
+                "liquid_fraction": 0.05,
+                "pressure": 1.0,
+        }
+    if inpdict["nose_hoover"] is None:
+        inpdict["nose_hoover"] = {
+                "thermostat_damping": 0.1,
+                "barostat_damping": 0.1,
+        }
+    if inpdict["berendsen"] is None:
+        inpdict["berendsen"] = {
+                "thermostat_damping": 100.0,
+                "barostat_damping": 100.0,
+        }
+    if mode == 'ts':
+        inpdict["temperature"] = [inpdict['temperature'], inpdict["temperature_stop"]]
+        del inpdict["temperature_stop"]
+        
     calc = Calculation(**inpdict)
     return calc
 
 @as_function_node('free_energy')
-def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
+def SolidFreeEnergy(inp, structure: Atoms, potential: str) -> float:
     """
     Calculate the free energy of a solid phase.
 
@@ -243,7 +277,7 @@ def SolidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
     return job.report["results"]["free_energy"]
 
 @as_function_node('free_energy')
-def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float:
+def LiquidFreeEnergy(inp, structure: Atoms, potential: str) -> float:
     """
     Calculate the free energy of a liquid phase.
 
@@ -272,7 +306,7 @@ def LiquidFreeEnergy(inp: InputClass, structure: Atoms, potential: str) -> float
     return job.report["results"]["free_energy"]
 
 @as_function_node('temperature', 'free_energy')
-def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
+def SolidFreeEnergyWithTemperature(inp, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate the free energy of a solid phase as a function of temperature.
 
@@ -305,7 +339,7 @@ def SolidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential:
     return t, f
 
 @as_function_node('temperature', 'free_energy')
-def LiquidFreeEnergyWithTemperature(inp: InputClass, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
+def LiquidFreeEnergyWithTemperature(inp, structure: Atoms, potential: str) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate the free energy of a liquid phase as a function of temperature.
 
